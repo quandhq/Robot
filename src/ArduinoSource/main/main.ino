@@ -8,7 +8,7 @@ int enB = 3; int in3 = 5; int in4 = 4;
 MPU6050 mpu6050(Wire);
 
 // --- Systems Architecture Parameters ---
-float targetAngle = -0.20; // YOUR MEASURED BIAS: The "True Zero"
+float targetAngle =   0; // YOUR MEASURED BIAS: The "True Zero"
 float Kp = 45.0;           // Proportional: Strength of the correction
 float Kd = 1.8;            // Derivative: Dampening the oscillation
 int minPower = 55;         // Stiction threshold for yellow motors
@@ -16,19 +16,42 @@ int kickOffset = 10;       // COMPENSATION FOR 2.86° SLOP: Snaps gears shut
 
 float lastAngle = 0;
 
+int ledPin = 13; // Built-in LED
+
 void setup() {
   Serial.begin(9600);
   Wire.begin();
   mpu6050.begin();
   
-  Serial.println("System Initializing...");
-  // Note: We still calibrate to find relative zero, but our targetAngle handles the tilt
-  mpu6050.calcGyroOffsets(true);
-
+  pinMode(ledPin, OUTPUT);
   pinMode(enA, OUTPUT); pinMode(in1, OUTPUT); pinMode(in2, OUTPUT);
   pinMode(enB, OUTPUT); pinMode(in3, OUTPUT); pinMode(in4, OUTPUT);
+
+  // --- STATE 1: PREPARING ---
+  digitalWrite(ledPin, HIGH); 
+  Serial.println("PREPARING: Hold the robot steady. Calibration starts in 3 seconds...");
+  delay(3000); // 3-second startup delay
+
+  // --- STATE 2: CALIBRATING ---
+  digitalWrite(ledPin, LOW); // LED OFF means "Stay Still!"
+  Serial.println("CALIBRATING: Processing Ground Truth...");
   
-  lastAngle = mpu6050.getAngleX();
+  mpu6050.calcGyroOffsets(true);
+  Serial.println();
+  Serial.println("CALIBRATING: taking averaging...");
+  float totalAngle = 0;
+  for(int i = 0; i < 100; i++) {
+    mpu6050.update();
+    totalAngle += mpu6050.getAngleX();
+    delay(10);
+  }
+  
+  targetAngle = totalAngle / 100.0;
+  lastAngle = targetAngle;
+
+  // --- STATE 3: ACTIVE ---
+  digitalWrite(ledPin, HIGH); // LED ON means "Motors Live!"
+  Serial.println("SYSTEM ACTIVE: Release the robot now.");
 }
 
 void loop() {
