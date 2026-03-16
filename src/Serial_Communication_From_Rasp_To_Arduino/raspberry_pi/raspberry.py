@@ -14,9 +14,10 @@ if __name__ == "__main__":
                 break
 
     while True:
-        data_to_send = "Hello from rasp " + str(number) + "!\n"
-        number += 1
-        ser.write(data_to_send.encode("utf-8"))
-        line = ser.readline().decode("utf-8").rstrip()
-        print(line)
+        left_motor_speed = int(input("Enter left motor speed: "))
+        right_motor_speed = int(input("Enter right motor speed: "))
+        direction = int(input("Enter direction: "))
+        if direction != 0 and direction != 1:
+            direction = 0
+        ser.write(bytearray([left_motor_speed, right_motor_speed, direction]))
         time.sleep(1)
