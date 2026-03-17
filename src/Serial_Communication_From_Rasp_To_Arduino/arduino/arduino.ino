@@ -7,7 +7,7 @@ int enB = 3; int in3 = 5; int in4 = 4;
 
 const int number_of_byte = 3;
 
-char myBuffer[number_of_byte];
+uint8_t myBuffer[number_of_byte];
 
 void setup() {
   Serial.begin(9600);
@@ -41,7 +41,7 @@ void driveMotors(char* myBuffer) {
 void loop() {
   if (Serial.available() > 0) {
     // Store the return value to verify the data integrity
-    size_t count = Serial.readBytes(myBuffer, number_of_byte);
+    size_t count = Serial.readBytes((char*)myBuffer, number_of_byte);
 
     if (count == number_of_byte) {
       driveMotors(myBuffer);
