@@ -17,11 +17,11 @@ void setup() {
   pinMode(bin2, OUTPUT);
 
   // Use a lower speed (100) for the first desktop test
-  int testSpeed = 100; 
+  int testSpeed = 255; 
 
   // Motor A Forward
-  digitalWrite(ain1, LOW);
-  digitalWrite(ain2, HIGH);
+  digitalWrite(ain1, HIGH);
+  digitalWrite(ain2, LOW);
   analogWrite(enA, testSpeed); 
 
   // Motor B Forward

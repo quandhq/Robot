@@ -1,20 +1,24 @@
 #include <MPU6050_tockn.h>
 #include <Wire.h>
 
-// --- Hardware Pins ---
-int enA = 9; int in1 = 8; int in2 = 7;
-int enB = 3; int in3 = 5; int in4 = 4;
+// --- TB6612FNG Hardware Pins ---
+const int enA = 9;   // PWMA
+const int ain1 = 8;  // ain1
+const int ain2 = 7;  // ain2
+const int enB = 3;   // PWMB
+const int bin1 = 5;  // bin1
+const int bin2 = 4;  // bin2
+// Note: STBY is hardwired to 5V per your setup
 
 MPU6050 mpu6050(Wire);
 
-// --- Systems Architecture Parameters ---
+// --- PID Parameters (Adjusted for JGB37-520 Torque) ---
 float targetAngle = 0; 
-float Kp = 60;           // Bring Kp back up slightly now that minPower is lower
-float Kd = 3.5;           // High damping to stop the jiggles
-float Ki = 250.0;         // High willpower, but slightly lower to avoid pendulum swings
-int minPower = 150;       // THIS IS THE KEY: Bring this back down!
-int kickOffset = 20;      
-float trim = -0.5;        // Increased nudge to stop the drift
+float Kp = 35.0;      // Slightly lower to reduce "shaking"
+float Kd = 1.8;       // Lowered to match the lower Kp
+float Ki = 180.0;     // Lowered significantly to stop the "wandering" 
+int minPower = 45;    // Metal gears only need ~45 to start moving
+float trim = 1.0;     // Start at 0 and only adjust by 0.1 at a time
 
 // --- Real-Time Control Variables ---
 unsigned long lastTime;
@@ -30,8 +34,8 @@ void setup() {
   mpu6050.begin();
   
   pinMode(ledPin, OUTPUT);
-  pinMode(enA, OUTPUT); pinMode(in1, OUTPUT); pinMode(in2, OUTPUT);
-  pinMode(enB, OUTPUT); pinMode(in3, OUTPUT); pinMode(in4, OUTPUT);
+  pinMode(enA, OUTPUT); pinMode(ain1, OUTPUT); pinMode(ain2, OUTPUT);
+  pinMode(enB, OUTPUT); pinMode(bin1, OUTPUT); pinMode(bin2, OUTPUT);
   digitalWrite(ledPin, HIGH); 
 
   // Calibration sequence...
@@ -70,7 +74,7 @@ void loop() {
     Serial.println(error);
 
     // 1. SAFETY ENVELOPE (The Floor Check)
-    if (abs(error) > 40.0) {
+    if (abs(error) > 45.0) {
       stopMotors();
       errorIntegral = 0; // Wipe memory instantly
       lastTime = now;
@@ -83,7 +87,7 @@ void loop() {
 
     // 3. INTEGRAL (Memory with Anti-Windup)
     // Only integrate when within the "Recoverable Zone" (5 degrees)
-    if (abs(error) < 10.0) {
+    if (abs(error) < 20.0) {
       errorIntegral += error;
     } else {
       errorIntegral = 0; 
@@ -94,7 +98,7 @@ void loop() {
     float output = (error * Kp) + (errorRate * Kd) + (errorIntegral * Ki * 0.01);
 
     // 5. DEADBAND & EXECUTION
-    if (abs(error) < 0.1) { // Tighter deadband for shorter L
+    if (abs(error) < 0.2) {
       stopMotors();
       errorIntegral = 0;
     } else {
@@ -106,18 +110,35 @@ void loop() {
 }
 
 void driveMotors(float output) {
-  // Now speed can actually scale between 120 and 255
-  int speed = constrain(abs(output) + minPower + kickOffset, 0, 255);
+  // If the error is tiny, don't jitter the motors
+  if (abs(output) < 0.05) {
+    stopMotors();
+    return;
+  }
+  // DEADZONE JUMP: If the motor needs to move, 
+  // we start it at minPower immediately so the gears engage.
+  int speed = abs(output) + minPower; 
+  speed = constrain(speed, 0, 255);
 
-  if (output > 0.1) {
-    digitalWrite(in1, HIGH); digitalWrite(in2, LOW);
-    digitalWrite(in3, HIGH); digitalWrite(in4, LOW);
-    analogWrite(enA, speed);
+  if (output > 0) { // drive backward
+    // Motor A backward
+    digitalWrite(ain1, LOW);
+    digitalWrite(ain2, HIGH);
+    analogWrite(enA, speed); 
+
+    // Motor B backward
+    digitalWrite(bin1, HIGH);
+    digitalWrite(bin2, LOW);
     analogWrite(enB, speed);
-  } else if (output < -0.1) {
-    digitalWrite(in1, LOW);  digitalWrite(in2, HIGH);
-    digitalWrite(in3, LOW);  digitalWrite(in4, HIGH);
-    analogWrite(enA, speed);
+  } else if (output < 0) { // drive forward
+    // Motor A Forward
+    digitalWrite(ain1, HIGH);
+    digitalWrite(ain2, LOW);
+    analogWrite(enA, speed); 
+
+    // Motor B Forward
+    digitalWrite(bin1, LOW);
+    digitalWrite(bin2, HIGH);
     analogWrite(enB, speed);
   } else {
     stopMotors();
@@ -127,6 +148,6 @@ void driveMotors(float output) {
 void stopMotors() {
   analogWrite(enA, 0);
   analogWrite(enB, 0);
-  digitalWrite(in1, LOW); digitalWrite(in2, LOW);
-  digitalWrite(in3, LOW); digitalWrite(in4, LOW);
+  digitalWrite(ain1, LOW); digitalWrite(ain2, LOW);
+  digitalWrite(bin1, LOW); digitalWrite(bin2, LOW);
 }
