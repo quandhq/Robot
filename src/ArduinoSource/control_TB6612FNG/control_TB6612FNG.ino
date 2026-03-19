@@ -17,7 +17,7 @@ void setup() {
   pinMode(bin2, OUTPUT);
 
   // Use a lower speed (100) for the first desktop test
-  int testSpeed = 255; 
+  int testSpeed = 300; 
 
   // Motor A Forward
   digitalWrite(ain1, HIGH);

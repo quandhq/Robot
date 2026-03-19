@@ -14,11 +14,11 @@ MPU6050 mpu6050(Wire);
 
 // --- PID Parameters (Adjusted for JGB37-520 Torque) ---
 float targetAngle = 0; 
-float Kp = 35.0;      // Slightly lower to reduce "shaking"
+float Kp = 40.0;      // Slightly lower to reduce "shaking"
 float Kd = 1.8;       // Lowered to match the lower Kp
 float Ki = 180.0;     // Lowered significantly to stop the "wandering" 
 int minPower = 45;    // Metal gears only need ~45 to start moving
-float trim = 1.0;     // Start at 0 and only adjust by 0.1 at a time
+float trim = -4;     // Start at 0 and only adjust by 0.1 at a time
 
 // --- Real-Time Control Variables ---
 unsigned long lastTime;
@@ -71,7 +71,7 @@ void loop() {
     Serial.print(currentAngle);
     Serial.print(" - ");
     float error = currentAngle - (targetAngle + trim);
-    Serial.println(error);
+    Serial.print(error);
 
     // 1. SAFETY ENVELOPE (The Floor Check)
     if (abs(error) > 45.0) {
@@ -98,7 +98,7 @@ void loop() {
     float output = (error * Kp) + (errorRate * Kd) + (errorIntegral * Ki * 0.01);
 
     // 5. DEADBAND & EXECUTION
-    if (abs(error) < 0.2) {
+    if (abs(error) < 0.05) {
       stopMotors();
       errorIntegral = 0;
     } else {
@@ -119,6 +119,9 @@ void driveMotors(float output) {
   // we start it at minPower immediately so the gears engage.
   int speed = abs(output) + minPower; 
   speed = constrain(speed, 0, 255);
+
+  Serial.print(" - ");
+  Serial.println(speed);
 
   if (output > 0) { // drive backward
     // Motor A backward
