@@ -7,7 +7,7 @@ if __name__ == "__main__":
     number = 0
 
     while True:
-        """Opening serial port from rasp causes arduino connected by USB cable to reset"""
+        #Opening serial port from rasp causes arduino connected by USB cable to reset
         # --- Handshake Phase ---
         print("Waiting for Arduino to calibrate...")        
         while True:
@@ -21,13 +21,17 @@ if __name__ == "__main__":
                     continue
 
         while True:
-            left_motor_speed = int(input("Enter left motor speed: "))
-            right_motor_speed = int(input("Enter right motor speed: "))
-            direction = int(input("Enter direction: "))
-            if direction != 0 and direction != 1:
-                direction = 0
-            ser.write(bytearray([left_motor_speed, right_motor_speed, direction]))
-            time.sleep(1)
+            try:
+                # User enters -5 (lean back/move back) to 5 (lean forward/move forward)
+                cmd = int(input("Enter tilt command (-5 to 5 degrees): "))
+                cmd = max(-5, min(5, cmd)) # Safety clamp
+                
+                # Convert to a signed byte and send
+                ser.write(cmd.to_bytes(1, byteorder='big', signed=True))
+                print(f"Sent: {cmd} degrees")
+            except ValueError:
+                print("Please enter a valid number.")
+
             start_checking_tick_time = (int)(time.time())
             acknowledged = False
             while True:
