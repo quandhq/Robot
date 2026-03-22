@@ -14,11 +14,11 @@ MPU6050 mpu6050(Wire);
 
 // --- PID Parameters (Adjusted for JGB37-520 Torque) ---
 float targetAngle = 0; 
-float Kp = 40.0;      // Slightly lower to reduce "shaking"
-float Kd = 1.8;       // Lowered to match the lower Kp
-float Ki = 180.0;     // Lowered significantly to stop the "wandering" 
-int minPower = 45;    // Metal gears only need ~45 to start moving
-float trim = -4;     // Start at 0 and only adjust by 0.1 at a time
+float Kp = 50.0;      // Slightly lower to reduce "shaking"//50 IS FINE
+float Kd = 4.0;       // Lowered to match the lower Kp
+float Ki = 200.0;     // Lowered significantly to stop the "wandering"  //200 is fine 
+int minPower = 10;    // Metal gears only need ~45 to start moving
+float trim = 1.0;     // Start at 0 and only adjust by 0.1 at a time -> CHANGE THIS TO FIND THE BALANCE POINT
 
 // --- Real-Time Control Variables ---
 unsigned long lastTime;
@@ -85,24 +85,22 @@ void loop() {
     float errorRate = currentAngle - lastAngle;
     lastAngle = currentAngle;
 
-    // 3. INTEGRAL (Memory with Anti-Windup)
-    // Only integrate when within the "Recoverable Zone" (5 degrees)
-    if (abs(error) < 20.0) {
-      errorIntegral += error;
+    // 3. INTEGRAL (The "Leaky" Version)
+    if (abs(error) < 10.0) {
+        errorIntegral += error;
     } else {
-      errorIntegral = 0; 
+        errorIntegral *= 0.9; 
     }
 
-    // 4. CONTROL LAW
-    // Note: Ki is now multiplied by 0.01 inside the logic
+    // 4. CONTROL LAW (Calculate the math BEFORE checking the deadband)
     float output = (error * Kp) + (errorRate * Kd) + (errorIntegral * Ki * 0.01);
 
     // 5. DEADBAND & EXECUTION
     if (abs(error) < 0.05) {
-      stopMotors();
-      errorIntegral = 0;
+        stopMotors();
+        // Notice we DON'T reset errorIntegral to 0 here anymore!
     } else {
-      driveMotors(output);
+        driveMotors(output);
     }
 
     lastTime = now;
