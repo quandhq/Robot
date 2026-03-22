@@ -23,7 +23,7 @@ if __name__ == "__main__":
         while True:
             try:
                 # User enters -5 (lean back/move back) to 5 (lean forward/move forward)
-                cmd = int(input("Enter tilt command (-5 to 5 degrees): "))
+                cmd = int(input("Enter tilt command (-5 to 5 degrees), minus is forward, plus is backward: "))
                 cmd = max(-5, min(5, cmd)) # Safety clamp
                 
                 # Convert to a signed byte and send
