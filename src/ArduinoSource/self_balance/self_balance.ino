@@ -8,7 +8,7 @@ const int ain2 = 7;  // ain2
 const int enB = 3;   // PWMB
 const int bin1 = 5;  // bin1
 const int bin2 = 4;  // bin2
-// Note: STBY is hardwired to 5V per your setup
+// Note: STBY is hardwired to 5V
 
 MPU6050 mpu6050(Wire);
 
@@ -16,13 +16,13 @@ MPU6050 mpu6050(Wire);
 float targetAngle = 0; 
 float Kp = 50.0;      // Slightly lower to reduce "shaking"//50 IS FINE
 float Kd = 4.0;       // Lowered to match the lower Kp
-float Ki = 200.0;     // Lowered significantly to stop the "wandering"  //200 is fine 
-int minPower = 10;    // Metal gears only need ~45 to start moving
+float Ki = 200.0;     // stop the "drifting"  //200 is fine 
+int minPower = 10;    // lower to 10 min to stop the oscillating because of the motor gear slap
 float trim = 1.0;     // Start at 0 and only adjust by 0.1 at a time -> CHANGE THIS TO FIND THE BALANCE POINT
 
 // --- Real-Time Control Variables ---
 unsigned long lastTime;
-const int sampleTime = 10; // 10ms = 100Hz (The industry standard for small robots)
+const int sampleTime = 10; // 10ms = 100Hz
 
 float lastAngle = 0;
 float errorIntegral = 0;
@@ -54,7 +54,9 @@ void setup() {
   lastAngle = targetAngle;
   lastTime = millis();
 
-  digitalWrite(ledPin, HIGH); 
+  // ONLY send this after calibration is 100% finished
+  Serial.println("ready!"); 
+  digitalWrite(ledPin, HIGH); // Visual confirmation
 }
 
 void loop() {
@@ -98,7 +100,6 @@ void loop() {
     // 5. DEADBAND & EXECUTION
     if (abs(error) < 0.05) {
         stopMotors();
-        // Notice we DON'T reset errorIntegral to 0 here anymore!
     } else {
         driveMotors(output);
     }
