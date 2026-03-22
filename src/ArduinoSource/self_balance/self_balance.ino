@@ -59,7 +59,17 @@ void setup() {
   digitalWrite(ledPin, HIGH); // Visual confirmation
 }
 
+float externalTargetOffset = 0; // The Pi will change this
+
 void loop() {
+  //Listen for Pi commanding
+  if(Serial.available() >= 1)
+  {
+    int8_t receivedOffset = Serial.read();
+    // Pi send from -5 to 5
+    externalTargetOffset = abs((float)receivedOffset) <= 5 ? (float)receivedOffset : 0;
+  }
+
   unsigned long now = millis();
   int timeChange = now - lastTime;
 
@@ -68,12 +78,12 @@ void loop() {
     mpu6050.update();
     float currentAngle = mpu6050.getAngleX();
     // DEBUG: Print this to see if the numbers are actually changing
-    Serial.print(targetAngle);
-    Serial.print(" - ");
-    Serial.print(currentAngle);
-    Serial.print(" - ");
+    // Serial.print(targetAngle);
+    // Serial.print(" - ");
+    // Serial.print(currentAngle);
+    // Serial.print(" - ");
     float error = currentAngle - (targetAngle + trim);
-    Serial.print(error);
+    // Serial.print(error);
 
     // 1. SAFETY ENVELOPE (The Floor Check)
     if (abs(error) > 45.0) {
@@ -106,6 +116,8 @@ void loop() {
 
     lastTime = now;
   }
+  //Notify Rasp that arduino's loop function is still running
+  Serial.println("arduino_ack_tick"); 
 }
 
 void driveMotors(float output) {
@@ -119,8 +131,8 @@ void driveMotors(float output) {
   int speed = abs(output) + minPower; 
   speed = constrain(speed, 0, 255);
 
-  Serial.print(" - ");
-  Serial.println(speed);
+  // Serial.print(" - ");
+  // Serial.println(speed);
 
   if (output > 0) { // drive backward
     // Motor A backward
