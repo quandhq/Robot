@@ -1,5 +1,6 @@
 #include <MPU6050_tockn.h>
 #include <Wire.h>
+#define MAX_RAMP_SPEED 0.05
 
 // --- TB6612FNG Hardware Pins ---
 const int enA = 9;   // PWMA
@@ -32,14 +33,16 @@ int ledPin = 13;
 unsigned long lastTelemetry;
 
 float externalTargetOffset = 0; // The Pi will change this
+float smoothedChangingTargetOffset = 0; // To slowly change to external target angle
 
 // --------------DEBUG COMMANDING--------------------------
 long check_time = 0;
-float command[3] = {-2, 0, 2};
+float command[3] = {-1.5, 0, 1.5};
 uint8_t index = 0;
 void debug_commanding()
 {
-  if(millis() - check_time >= 1000)
+  int interval = (index == 2) ? 2000 : 2000; 
+  if(millis() - check_time >= interval)
   {
     if(index >= 3)
     {
@@ -92,7 +95,7 @@ void setup() {
 
 float currentAngle = 0;
 void loop() {
-  // debug_commanding();
+  debug_commanding();
   //Listen for Pi commanding
   if(Serial.available() >= 1)
   {
@@ -110,6 +113,10 @@ void loop() {
 
   // ENSURE DETERMINISTIC TIMING (The 100Hz Heartbeat)
   if (timeChange >= SAMPLE_TIME) {
+    //slowly change to externalTargetOffset
+    float diff = externalTargetOffset - smoothedChangingTargetOffset;
+    diff = (diff < -MAX_RAMP_SPEED ? -MAX_RAMP_SPEED : (diff > MAX_RAMP_SPEED ? MAX_RAMP_SPEED : diff));
+    smoothedChangingTargetOffset += diff;
     // mpu6050.update();
     // float sample = mpu6050.getAngleX();
     // push(sample);
@@ -121,7 +128,7 @@ void loop() {
     // Serial.print("current: ");
     // Serial.print(currentAngle);
     // Serial.print(" - ");
-    float error = currentAngle - (targetAngle + trim + externalTargetOffset);
+    float error = currentAngle - (targetAngle + trim + smoothedChangingTargetOffset);
     // Serial.print("Error: ");
     // Serial.print(error);
     // Serial.println();
