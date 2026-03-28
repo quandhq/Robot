@@ -1,24 +1,54 @@
 import serial
 import time
 
+ser = serial.Serial("/dev/ttyACM0", 115200, timeout=0.5)
+
+def wait_for_ready():
+    print("Waiting for Arduino to calibrate...")        
+    while True:
+        if ser.in_waiting > 0:
+            try:
+                line = ser.readline().decode("utf-8").strip()
+                if line == "ready!":
+                    print("Connection established! Robot is balanced.")
+                    break
+            except:
+                continue
+
+def check_tick() -> bool:
+    start_checking_tick_time = (int)(time.time())
+    while True:
+        if ser.in_waiting > 0:
+            lines = ser.readlines()
+            if lines:
+                try:
+                    line = lines[-1].decode("utf-8").strip()
+                    angle = float(line)
+                    print("Current angle: " + str(angle))
+                    return True
+                except (ValueError, UnicodeDecodeError, IndexError):
+                    #Check the second latest data instead
+                    if len(lines) >= 2:
+                        try:
+                            line = lines[-2].decode("utf-8").strip()
+                            angle = float(line)
+                            print("Current angle: " + str(angle))
+                            return True
+                        except:
+                            pass
+                    pass
+
+        if (int)(time.time()) - start_checking_tick_time > 1:
+            break
+    return False
+
 if __name__ == "__main__":
-    ser = serial.Serial("/dev/ttyACM0", 115200, timeout=1)
     ser.reset_input_buffer()
-    number = 0
 
     while True:
         #Opening serial port from rasp causes arduino connected by USB cable to reset
         # --- Handshake Phase ---
-        print("Waiting for Arduino to calibrate...")        
-        while True:
-            if ser.in_waiting > 0:
-                try:
-                    line = ser.readline().decode("utf-8").strip()
-                    if line == "ready!":
-                        print("Connection established! Robot is balanced.")
-                        break
-                except:
-                    continue
+        wait_for_ready()
 
         while True:
             try:
@@ -32,25 +62,9 @@ if __name__ == "__main__":
             except ValueError:
                 print("Please enter a valid number.")
 
-            start_checking_tick_time = (int)(time.time())
-            acknowledged = False
-            while True:
-                if ser.in_waiting > 0:
-                    try:
-                        line = ser.readline().decode("utf-8").strip()
-                        print(line)
-                        if line == "arduino_ack_tick":
-                            acknowledged = True
-                            break
-                    except:
-                        continue
-
-                if (int)(time.time()) - start_checking_tick_time > 1:
-                        print("No acknowledged tick from arduino, try handshaking again.")
-                        acknowledged = False
-                        break
-            
+            acknowledged = check_tick()
             if acknowledged == False:
+                print("No acknowledged tick from arduino, try handshaking again.")
                 break
                 
                 
