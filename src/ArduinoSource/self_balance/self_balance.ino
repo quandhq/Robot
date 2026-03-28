@@ -22,7 +22,7 @@ float trim = 1.0;     // Start at 0 and only adjust by 0.1 at a time -> CHANGE T
 
 // --- Real-Time Control Variables ---
 unsigned long lastTime;
-#define SAMPLE_TIME 10; // 10ms = 100Hz
+#define SAMPLE_TIME 10 // 10ms = 100Hz
 
 float lastAngle = 0;
 float errorIntegral = 0;
@@ -30,6 +30,28 @@ int ledPin = 13;
 
 // --- Telemetry ---
 unsigned long lastTelemetry;
+
+float externalTargetOffset = 0; // The Pi will change this
+
+// --------------DEBUG COMMANDING--------------------------
+long check_time = 0;
+float command[3] = {-2, 0, 2};
+uint8_t index = 0;
+void debug_commanding()
+{
+  if(millis() - check_time >= 1000)
+  {
+    if(index >= 3)
+    {
+      index = 0;
+    }
+    externalTargetOffset = command[index];
+    ++index;
+    check_time = millis();
+  }
+}
+//---------------------------end---------------------
+
 
 void setup() {
   Serial.begin(115200); // Increased speed to reduce CPU "blocking" time
@@ -59,16 +81,18 @@ void setup() {
   lastAngle = targetAngle;
   lastTime = millis();
   lastTelemetry = millis();
+  check_time = millis();
 
   // ONLY send this after calibration is 100% finished
   Serial.println("ready!"); //<<<<IMPORTANT, NOT A DEBUGGING 
   digitalWrite(ledPin, HIGH); // Visual confirmation
 }
 
-float externalTargetOffset = 0; // The Pi will change this
+
 
 float currentAngle = 0;
 void loop() {
+  // debug_commanding();
   //Listen for Pi commanding
   if(Serial.available() >= 1)
   {
@@ -80,20 +104,27 @@ void loop() {
   unsigned long now = millis();
   int timeChange = now - lastTime;
 
+  mpu6050.update();
+  float sample = mpu6050.getAngleX();
+  push(sample);
+
   // ENSURE DETERMINISTIC TIMING (The 100Hz Heartbeat)
   if (timeChange >= SAMPLE_TIME) {
-    mpu6050.update();
-    float sample = mpu6050.getAngleX();
-    push(sample);
-    currentAngle = get_average();
+    // mpu6050.update();
+    // float sample = mpu6050.getAngleX();
+    // push(sample);
+    currentAngle = sample;//get_average();
     // DEBUG: Print this to see if the numbers are actually changing
+    // Serial.print("target: ");
     // Serial.print(targetAngle);
     // Serial.print(" - ");
+    // Serial.print("current: ");
     // Serial.print(currentAngle);
     // Serial.print(" - ");
     float error = currentAngle - (targetAngle + trim + externalTargetOffset);
+    // Serial.print("Error: ");
     // Serial.print(error);
-
+    // Serial.println();
     // 1. SAFETY ENVELOPE (The Floor Check)
     if (abs(error) > 45.0) {
       stopMotors();
@@ -129,7 +160,7 @@ void loop() {
   //Notify Rasp that arduino's loop function is still running
   if(now - lastTelemetry > 50)
   {
-    Serial.println(currentAngle);
+    Serial.println(get_average());
     lastTelemetry = now;
   }
 }
