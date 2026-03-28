@@ -22,11 +22,14 @@ float trim = 1.0;     // Start at 0 and only adjust by 0.1 at a time -> CHANGE T
 
 // --- Real-Time Control Variables ---
 unsigned long lastTime;
-const int sampleTime = 10; // 10ms = 100Hz
+#define SAMPLE_TIME 10; // 10ms = 100Hz
 
 float lastAngle = 0;
 float errorIntegral = 0;
 int ledPin = 13; 
+
+// --- Telemetry ---
+unsigned long lastTelemetry;
 
 void setup() {
   Serial.begin(115200); // Increased speed to reduce CPU "blocking" time
@@ -47,20 +50,24 @@ void setup() {
   float totalAngle = 0;
   for(int i = 0; i < 100; i++) {
     mpu6050.update();
-    totalAngle += mpu6050.getAngleX();
+    float sample = mpu6050.getAngleX(); 
+    push(sample);
+    totalAngle += sample;
     delay(10);
   }
   targetAngle = totalAngle / 100.0;
   lastAngle = targetAngle;
   lastTime = millis();
+  lastTelemetry = millis();
 
   // ONLY send this after calibration is 100% finished
-  Serial.println("ready!"); 
+  Serial.println("ready!"); //<<<<IMPORTANT, NOT A DEBUGGING 
   digitalWrite(ledPin, HIGH); // Visual confirmation
 }
 
 float externalTargetOffset = 0; // The Pi will change this
 
+float currentAngle = 0;
 void loop() {
   //Listen for Pi commanding
   if(Serial.available() >= 1)
@@ -74,15 +81,17 @@ void loop() {
   int timeChange = now - lastTime;
 
   // ENSURE DETERMINISTIC TIMING (The 100Hz Heartbeat)
-  if (timeChange >= sampleTime) {
+  if (timeChange >= SAMPLE_TIME) {
     mpu6050.update();
-    float currentAngle = mpu6050.getAngleX();
+    float sample = mpu6050.getAngleX();
+    push(sample);
+    currentAngle = get_average();
     // DEBUG: Print this to see if the numbers are actually changing
     // Serial.print(targetAngle);
     // Serial.print(" - ");
     // Serial.print(currentAngle);
     // Serial.print(" - ");
-    float error = currentAngle - (targetAngle + trim);
+    float error = currentAngle - (targetAngle + trim + externalTargetOffset);
     // Serial.print(error);
 
     // 1. SAFETY ENVELOPE (The Floor Check)
@@ -116,8 +125,13 @@ void loop() {
 
     lastTime = now;
   }
+
   //Notify Rasp that arduino's loop function is still running
-  Serial.println("arduino_ack_tick"); 
+  if(now - lastTelemetry > 50)
+  {
+    Serial.println(currentAngle);
+    lastTelemetry = now;
+  }
 }
 
 void driveMotors(float output) {
@@ -165,3 +179,93 @@ void stopMotors() {
   digitalWrite(ain1, LOW); digitalWrite(ain2, LOW);
   digitalWrite(bin1, LOW); digitalWrite(bin2, LOW);
 }
+
+// -------------------------------circular buffer--------------------------------------------
+const uint8_t N = 20;
+const uint8_t AVERAGE_NUM = 8;  //number of lastest elements to get average of , AVERAGE_NUM <= N
+float circularBuffer[N] = {};
+uint8_t count = 0; //number of elements that circularBuffer currently has
+uint8_t head = 0;  //latest position to write to
+uint8_t tail = 0;  //oldest position to read from
+double NUMERATOR = 0;
+double DENOMINATOR = 0;
+int RESYNC_COUNTER = 0;
+#define RESYNC_COUNTER_CYCLE 1000
+
+void push(float value)
+{
+    if(RESYNC_COUNTER >= RESYNC_COUNTER_CYCLE)
+    {
+        resync();
+        RESYNC_COUNTER = 0;
+    }
+    float outgoing_value = 0;
+    NUMERATOR += value;
+    ++RESYNC_COUNTER;
+    if(DENOMINATOR >= AVERAGE_NUM)
+    {
+        outgoing_value = circularBuffer[(head-1-(AVERAGE_NUM-1)+N)%N];
+    }
+    else
+    {
+        ++DENOMINATOR;
+    }
+    NUMERATOR -= outgoing_value;
+    circularBuffer[head] = value;
+    head = (head+1)%N;
+    if(count < N)
+    {
+        ++count;
+    }
+    else
+    {
+        tail = (tail+1)%N;
+    }
+}
+
+float pop()
+{
+    if(count==0)
+    {
+        return 0;
+    }
+    float res = circularBuffer[tail];
+    tail = (tail+1)%N;
+    --count;
+    return res;
+}
+
+
+float get_average()
+{
+    if(count == 0) return 0;
+    // uint8_t start = 0;
+    // float numerator = 0;
+    // unsigned int num = AVERAGE_NUM;
+    // if(count < AVERAGE_NUM)
+    // {
+    //     num = count;
+    // }
+    // start = (head-1-(num-1)+N)%N;
+    // while(num > 0)
+    // {
+    //     numerator += circularBuffer[start];
+    //     start = (start+1)%N;
+    //     --num;
+    // }
+    return NUMERATOR/DENOMINATOR;
+}
+
+void resync() //to re-calculate the NUMERATOR again to get rid of accumulation of floating point error
+{
+    double new_NUMERATOR = 0;
+    uint8_t start = (head-1-(AVERAGE_NUM-1)+N)%N;
+    for(uint8_t i=0; i<AVERAGE_NUM; ++i)
+    {
+      new_NUMERATOR += circularBuffer[start];
+      start = (start+1)%N;
+    }
+    NUMERATOR = new_NUMERATOR;
+    return;
+}
+//--------------------------------end------------------------------------------------
