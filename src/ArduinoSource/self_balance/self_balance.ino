@@ -1,6 +1,23 @@
 #include <MPU6050_tockn.h>
 #include <Wire.h>
-#define MAX_RAMP_SPEED 0.05
+
+
+//---------read MPU data------------------------
+#define MPU6050_ADDR 0x68 //I2C address of the MPU6050
+#define ACCEL_XOUT_H 0x3B
+#define PWR_MGMT_1 0x6B
+#define ACCEL_CONFIG 0x1C //register for configurating force range
+#define PLUS_MINUS_2G 0x00 //value to configurate register ACCEL_CONFIG
+#define FORCE_RESOLUTION 32768
+// --- DATA STRUCTURES ---
+typedef struct {
+    float x;
+    float y;
+    float z;
+} AccelData;
+
+int FORCE_RANGE = 2;
+
 
 // --- TB6612FNG Hardware Pins ---
 const int enA = 9;   // PWMA
@@ -37,7 +54,7 @@ float smoothedChangingTargetOffset = 0; // To slowly change to external target a
 
 // --------------DEBUG COMMANDING--------------------------
 long check_time = 0;
-float command[3] = {-1.5, 0, 1.5};
+float command[3] = {-1, 0, 1};
 uint8_t index = 0;
 void debug_commanding()
 {
@@ -56,10 +73,81 @@ void debug_commanding()
 //---------------------------end---------------------
 
 
+
+//>>>>>>>>>>>>>>>>>>>>MPU6050 hardware communication
+
+void setup_mpu6050()
+{
+  //>>>>>>>>>>>Wake up the MPU6-50
+  Wire.beginTransmission(MPU6050_ADDR);
+  Wire.write(PWR_MGMT_1); //PWR_MGMT_1 register
+  Wire.write(0);
+  Wire.endTransmission(true);
+  //<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+  //>>>>>>>>>>>>>>>>configurate the force range -2g -> +2g
+  Wire.beginTransmission(MPU6050_ADDR);
+  Wire.write(ACCEL_CONFIG);
+  switch(FORCE_RANGE)
+  {
+    case 2:
+      Wire.write(PLUS_MINUS_2G);
+      break;
+    default:
+      Wire.write(PLUS_MINUS_2G);
+      break;
+  }
+  Wire.endTransmission(true);
+  //<<<<<<<<<<<<<<<<<<<<
+}
+
+AccelData read_mpu6050_accel()
+{
+  AccelData data = {0,0,0};
+  //Tell sensor that we want to read starting from x-axis high byte
+  Wire.beginTransmission(MPU6050_ADDR);
+  Wire.write(ACCEL_XOUT_H);
+  Wire.endTransmission(false);
+
+  //Request 6 bytes (X, Y, Z are 2bytes each);
+  Wire.requestFrom(MPU6050_ADDR, 6, true);
+  if(Wire.available() == 6)
+  {
+    // Bit-shift high and low bytes into 16-bit integers
+    float scale_factor = (float)FORCE_RANGE/FORCE_RESOLUTION;
+    int16_t raw_x = (Wire.read() << 8) | Wire.read();
+    int16_t raw_y = (Wire.read() << 8) | Wire.read();
+    int16_t raw_z = (Wire.read() << 8) | Wire.read(); 
+
+    data.x = (float)raw_x * scale_factor;
+    data.y = (float)raw_y * scale_factor;
+    data.z = (float)raw_z * scale_factor;
+  }
+  return data;
+}
+//<<<<<<<<<<<<<<<<<<<<
+
+
+//>>>>>>>>>>>>>>>>>>>>MATH and FILTER for MPU6050 data
+float get_accel_norm(float x, float y, float z)
+{
+  return sqrt(x*x+y*y+z*z);
+}
+
+bool is_data_clean(float norm)
+{
+  //1g is ideal, we allow for 5% error
+  return 0.95 < norm && norm < 1.05;
+}
+
 void setup() {
   Serial.begin(115200); // Increased speed to reduce CPU "blocking" time
   Wire.begin();
-  mpu6050.begin();
+  mpu6050.begin(); //Initialize the mpu with library code first so that the custom initialization will not be cleared out
+  setup_mpu6050();
+  Serial.println("MPU6050 Initialized. Starting Norm Filter Test...");
+  delay(1000);
+
   
   pinMode(ledPin, OUTPUT);
   pinMode(enA, OUTPUT); pinMode(ain1, OUTPUT); pinMode(ain2, OUTPUT);
@@ -91,124 +179,153 @@ void setup() {
   digitalWrite(ledPin, HIGH); // Visual confirmation
 }
 
-
+float MAX_RAMP_SPEED = 0.05;
 
 float currentAngle = 0;
 void loop() {
-  debug_commanding();
-  //Listen for Pi commanding
-  if(Serial.available() >= 1)
-  {
-    int8_t receivedOffset = Serial.read();
-    // Pi send from -5 to 5
-    externalTargetOffset = abs((float)receivedOffset) <= 5 ? (float)receivedOffset : 0;
-  }
 
-  unsigned long now = millis();
-  int timeChange = now - lastTime;
+  //>>>>>>>>>>>>>>>>>TEST NORM
+  // Read x,y,z
+  AccelData accel = read_mpu6050_accel();
+  
+  // Apply the math
+  float current_norm = get_accel_norm(accel.x, accel.y, accel.z);
+  bool trust_sensor = is_data_clean(current_norm);
 
-  mpu6050.update();
-  float sample = mpu6050.getAngleX();
-  push(sample);
+  // Output the result
+  Serial.print("Norm: ");
+  Serial.print(current_norm);
+  Serial.print("g | Trust: ");
+  Serial.println(trust_sensor ? "YES" : "NO - VIBRATION DETECTED");
+  
+  delay(50); // 20Hz loop for easy reading in the Serial Monitor
+  //<<<<<<<<<<<<<<<<<<<<<
 
-  // ENSURE DETERMINISTIC TIMING (The 100Hz Heartbeat)
-  if (timeChange >= SAMPLE_TIME) {
-    //slowly change to externalTargetOffset
-    float diff = externalTargetOffset - smoothedChangingTargetOffset;
-    diff = (diff < -MAX_RAMP_SPEED ? -MAX_RAMP_SPEED : (diff > MAX_RAMP_SPEED ? MAX_RAMP_SPEED : diff));
-    smoothedChangingTargetOffset += diff;
-    // mpu6050.update();
-    // float sample = mpu6050.getAngleX();
-    // push(sample);
-    currentAngle = sample;//get_average();
-    // DEBUG: Print this to see if the numbers are actually changing
-    // Serial.print("target: ");
-    // Serial.print(targetAngle);
-    // Serial.print(" - ");
-    // Serial.print("current: ");
-    // Serial.print(currentAngle);
-    // Serial.print(" - ");
-    float error = currentAngle - (targetAngle + trim + smoothedChangingTargetOffset);
-    // Serial.print("Error: ");
-    // Serial.print(error);
-    // Serial.println();
-    // 1. SAFETY ENVELOPE (The Floor Check)
-    if (abs(error) > 45.0) {
-      stopMotors();
-      errorIntegral = 0; // Wipe memory instantly
-      lastTime = now;
-      return; 
-    }
 
-    // 2. DERIVATIVE (Velocity)
-    float errorRate = currentAngle - lastAngle;
-    lastAngle = currentAngle;
 
-    // 3. INTEGRAL (The "Leaky" Version)
-    if (abs(error) < 10.0) {
-        errorIntegral += error;
-    } else {
-        errorIntegral *= 0.9; 
-    }
+//   debug_commanding();
+//   //Listen for Pi commanding
 
-    // 4. CONTROL LAW (Calculate the math BEFORE checking the deadband)
-    float output = (error * Kp) + (errorRate * Kd) + (errorIntegral * Ki * 0.01);
+//   if(Serial.available() >= 1)
+//   {
+//     int8_t receivedOffset = Serial.read();
+//     // Pi send from -5 to 5
+//     externalTargetOffset = abs((float)receivedOffset) <= 5 ? (float)receivedOffset : 0;
+//   }
 
-    // 5. DEADBAND & EXECUTION
-    if (abs(error) < 0.05) {
-        stopMotors();
-    } else {
-        driveMotors(output);
-    }
+//   unsigned long now = millis();
+//   int timeChange = now - lastTime;
 
-    lastTime = now;
-  }
+//   mpu6050.update();
+//   float sample = mpu6050.getAngleX();
+//   push(sample);
 
-  //Notify Rasp that arduino's loop function is still running
-  if(now - lastTelemetry > 50)
-  {
-    Serial.println(get_average());
-    lastTelemetry = now;
-  }
-}
+//   // ENSURE DETERMINISTIC TIMING (The 100Hz Heartbeat)
+//   if (timeChange >= SAMPLE_TIME) {
+//     if(externalTargetOffset == 0)
+//     {
+//       smoothedChangingTargetOffset = externalTargetOffset;
+//     }
 
-void driveMotors(float output) {
-  // If the error is tiny, don't jitter the motors
-  if (abs(output) < 0.05) {
-    stopMotors();
-    return;
-  }
-  // DEADZONE JUMP: If the motor needs to move, 
-  // we start it at minPower immediately so the gears engage.
-  int speed = abs(output) + minPower; 
-  speed = constrain(speed, 0, 255);
+//     //---slowly change to externalTargetOffset---
+//     float diff = externalTargetOffset - smoothedChangingTargetOffset;
+//     diff = (diff < -MAX_RAMP_SPEED ? -MAX_RAMP_SPEED : (diff > MAX_RAMP_SPEED ? MAX_RAMP_SPEED : diff));
+//     smoothedChangingTargetOffset += diff;
+//     // mpu6050.update();
+//     // float sample = mpu6050.getAngleX();
+//     // push(sample);
+//     currentAngle = sample;//get_average();
+//     // DEBUG: Print this to see if the numbers are actually changing
+//     // Serial.print("target: ");
+//     // Serial.print(targetAngle);
+//     // Serial.print(" - ");
+//     // Serial.print("current: ");
+//     // Serial.print(currentAngle);
+//     // Serial.print(" - ");
+//     float error = currentAngle - (targetAngle + trim + smoothedChangingTargetOffset);
+//     // Serial.print("Error: ");
+//     // Serial.print(error);
+//     // Serial.println();
 
-  // Serial.print(" - ");
-  // Serial.println(speed);
+//     //---if the command is 0, raise the Kp and MAX_RAMP_SPEED to boost the torque to bring the robot back to balance 
 
-  if (output > 0) { // drive backward
-    // Motor A backward
-    digitalWrite(ain1, LOW);
-    digitalWrite(ain2, HIGH);
-    analogWrite(enA, speed); 
+//     // 1. SAFETY ENVELOPE (The Floor Check)
+//     if (abs(error) > 45.0) {
+//       stopMotors();
+//       errorIntegral = 0; // Wipe memory instantly
+//       lastTime = now;
+//       return; 
+//     }
 
-    // Motor B backward
-    digitalWrite(bin1, HIGH);
-    digitalWrite(bin2, LOW);
-    analogWrite(enB, speed);
-  } else if (output < 0) { // drive forward
-    // Motor A Forward
-    digitalWrite(ain1, HIGH);
-    digitalWrite(ain2, LOW);
-    analogWrite(enA, speed); 
+//     // 2. DERIVATIVE (Velocity)
+//     float errorRate = currentAngle - lastAngle;
+//     lastAngle = currentAngle;
 
-    // Motor B Forward
-    digitalWrite(bin1, LOW);
-    digitalWrite(bin2, HIGH);
-    analogWrite(enB, speed);
-  } else {
-    stopMotors();
-  }
+//     // 3. INTEGRAL (The "Leaky" Version)
+//     if (abs(error) < 10.0) {
+//         errorIntegral += error;
+//     } else {
+//         errorIntegral *= 0.9; 
+//     }
+
+//     // 4. CONTROL LAW (Calculate the math BEFORE checking the deadband)
+//     float output = (error * Kp) + (errorRate * Kd) + (errorIntegral * Ki * 0.01);
+
+//     // 5. DEADBAND & EXECUTION
+//     if (abs(error) < 0.05) {
+//         stopMotors();
+//     } else {
+//         driveMotors(output);
+//     }
+
+//     lastTime = now;
+//   }
+
+//   //Notify Rasp that arduino's loop function is still running
+//   if(now - lastTelemetry > 50)
+//   {
+//     Serial.println(get_average());
+//     lastTelemetry = now;
+//   }
+// }
+
+// void driveMotors(float output) {
+//   // If the error is tiny, don't jitter the motors
+//   if (abs(output) < 0.05) {
+//     stopMotors();
+//     return;
+//   }
+//   // DEADZONE JUMP: If the motor needs to move, 
+//   // we start it at minPower immediately so the gears engage.
+//   int speed = abs(output) + minPower; 
+//   speed = constrain(speed, 0, 255);
+
+//   // Serial.print(" - ");
+//   // Serial.println(speed);
+
+//   if (output > 0) { // drive backward
+//     // Motor A backward
+//     digitalWrite(ain1, LOW);
+//     digitalWrite(ain2, HIGH);
+//     analogWrite(enA, speed); 
+
+//     // Motor B backward
+//     digitalWrite(bin1, HIGH);
+//     digitalWrite(bin2, LOW);
+//     analogWrite(enB, speed);
+//   } else if (output < 0) { // drive forward
+//     // Motor A Forward
+//     digitalWrite(ain1, HIGH);
+//     digitalWrite(ain2, LOW);
+//     analogWrite(enA, speed); 
+
+//     // Motor B Forward
+//     digitalWrite(bin1, LOW);
+//     digitalWrite(bin2, HIGH);
+//     analogWrite(enB, speed);
+//   } else {
+//     stopMotors();
+//   }
 }
 
 void stopMotors() {
