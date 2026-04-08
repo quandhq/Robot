@@ -47,8 +47,8 @@ const int bin2 = 4;  // bin2
 // --- PID Parameters (Adjusted for JGB37-520 Torque) ---
 float targetAngle = 0; 
 float Kp = 50.0;      // Slightly lower to reduce "shaking"//50 IS FINE
-float Kd = 4.0;       // Lowered to match the lower Kp
 float Ki = 200.0;     // stop the "drifting"  //200 is fine 
+float Kd = 4.0;       // Lowered to match the lower Kp
 int minPower = 10;    // lower to 10 min to stop the oscillating because of the motor gear slap
 float trim = 1.0;     // Start at 0 and only adjust by 0.1 at a time -> CHANGE THIS TO FIND THE BALANCE POINT
 
@@ -272,7 +272,46 @@ void setup() {
 
   // ONLY send this after calibration is 100% finished
   Serial.println("ready!"); //<<<<IMPORTANT, NOT A DEBUGGING 
-  digitalWrite(ledPin, HIGH); // Visual confirmation
+  // Wait for configuration parameters from Rasp
+  bool configurationReceived = false;
+  while(configurationReceived == false)
+  {
+    if(Serial.available() >= 1)
+    {
+      // Expected format: "Kp,Ki,Kd,minPower,trim"
+      // Example: "50.0,200.0,4.0,10,1.0"
+      String configStr = Serial.readStringUntil('\n');
+      int comma1 = configStr.indexOf(',');
+      int comma2 = configStr.indexOf(',', comma1+1);
+      int comma3 = configStr.indexOf(',', comma2+1);
+      int comma4 = configStr.indexOf(',', comma3+1);
+      if(comma1 > 0 && comma2 > 0 && comma3 > 0 && comma4 > 0)
+      {
+        Kp = configStr.substring(0, comma1).toFloat();
+        Ki = configStr.substring(comma1+1, comma2).toFloat();
+        Kd = configStr.substring(comma2+1, comma3).toFloat();
+        minPower = configStr.substring(comma3+1, comma4).toInt();
+        trim = configStr.substring(comma4+1).toFloat();
+        Serial.print("Configuration: ")
+        Serial.print(Kp); Serial.print('|');
+        Serial.print(Ki); Serial.print('|');
+        Serial.print(Kd); Serial.print('|');
+        Serial.print(minPower); Serial.print('|');
+        Serial.println(trim);
+        configurationReceived = true;
+      }
+    }
+  }
+  // Visual confirmation that setup is done
+  digitalWrite(ledPin, HIGH); 
+  delay(500);
+  digitalWrite(ledPin, LOW);
+  delay(500);
+  digitalWrite(ledPin, HIGH); 
+  delay(500);
+  digitalWrite(ledPin, LOW);
+  delay(500);
+  digitalWrite(ledPin, HIGH); 
 }
 
 float MAX_RAMP_SPEED = 0.05;
