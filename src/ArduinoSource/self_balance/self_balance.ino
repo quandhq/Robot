@@ -89,6 +89,7 @@ void debug_commanding()
 
 
 //>>>>>>>>>>>>>>>>>>>>MPU6050 hardware communication
+float GYRO_X_OFFSET = 0;
 
 void update_mpu()
 {
@@ -171,7 +172,7 @@ float read_gyro_x_raw()
   return raw_gyro_x;
 }
 
-float GYRO_X_OFFSET = 0;
+
 void setup_mpu6050()
 {
   //>>>>>>>>>>>Wake up the MPU6-50
