@@ -281,6 +281,7 @@ void setup() {
       // Expected format: "Kp,Ki,Kd,minPower,trim"
       // Example: "50.0,200.0,4.0,10,1.0"
       String configStr = Serial.readStringUntil('\n');
+      configStr.trim(); //Cleans up \r or trailing spaces
       int comma1 = configStr.indexOf(',');
       int comma2 = configStr.indexOf(',', comma1+1);
       int comma3 = configStr.indexOf(',', comma2+1);
@@ -292,7 +293,7 @@ void setup() {
         Kd = configStr.substring(comma2+1, comma3).toFloat();
         minPower = configStr.substring(comma3+1, comma4).toInt();
         trim = configStr.substring(comma4+1).toFloat();
-        Serial.print("Configuration: ")
+        Serial.print("Configuration: ");
         Serial.print(Kp); Serial.print('|');
         Serial.print(Ki); Serial.print('|');
         Serial.print(Kd); Serial.print('|');
@@ -432,7 +433,7 @@ void loop() {
         driveMotors(output);
     }
 
-    lastTime = now;
+    lastTime += SAMPLE_TIME;
   }
 
   //Notify Rasp that arduino's loop function is still running
