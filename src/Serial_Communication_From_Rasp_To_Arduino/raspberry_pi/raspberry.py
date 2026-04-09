@@ -12,8 +12,10 @@ def wait_for_ready():
                 if line == "ready!":
                     print("Connection established! Robot is balanced.")
                     break
-            except:
+            except (UnicodeDecodeError, ValueError):
                 continue
+    # CLEAR THE INPUT BUFFER: Throw away any leftover data or boot-up noise sent from arduino
+    ser.reset_input_buffer()
 
 def send_configuration_parameters():
     print("Send configuration")
@@ -30,10 +32,16 @@ def send_configuration_parameters():
         if ser.in_waiting > 0:
             try:
                 line = ser.readline().decode("utf-8").strip()
-                print(line)
-                break
-            except:
+                if line != "ready!":
+                    print(line)
+                    break
+                else:   #catch the remaining "ready!" messages from wait_for_ready phase
+                    continue
+            except (UnicodeDecodeError, ValueError):
                 continue
+    
+    # CLEAR THE INPUT BUFFER: Throw away any leftover data or boot-up noise sent from arduino to start balancing process
+    ser.reset_input_buffer()
 
 def check_tick() -> bool:
     start_checking_tick_time = (int)(time.time())
