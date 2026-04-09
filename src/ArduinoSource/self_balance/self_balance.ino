@@ -270,12 +270,14 @@ void setup() {
   lastTelemetry = millis();
   check_time = millis();
 
-  // ONLY send this after calibration is 100% finished
-  Serial.println("ready!"); //<<<<IMPORTANT, NOT A DEBUGGING 
   // Wait for configuration parameters from Rasp
   bool configurationReceived = false;
   while(configurationReceived == false)
   {
+    // ONLY send this after calibration is 100% finished, and sent it repeatedly so that rasp can catch the message
+    Serial.println("ready!"); //<<<<IMPORTANT, NOT A DEBUGGING
+    delay(500);
+
     if(Serial.available() >= 1)
     {
       // Expected format: "Kp,Ki,Kd,minPower,trim"
